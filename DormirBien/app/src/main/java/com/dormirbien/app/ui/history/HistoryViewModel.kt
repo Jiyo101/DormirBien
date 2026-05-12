@@ -242,7 +242,7 @@ private fun SleepRow(rec: SleepRecord, onRate: () -> Unit) {
         val from = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val to   = SimpleDateFormat("EEE d MMM", Locale("es","ES"))
         to.format(from.parse(rec.dateKey)!!)
-    } catch (_: Exception) { rec.dateKey }
+    } catch (e: Exception) { rec.dateKey }
     Surface(color = CARD, shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, TXT3.copy(.12f)), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {

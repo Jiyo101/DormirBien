@@ -149,13 +149,13 @@ class AlarmService : Service() {
                 prepare()
                 start()
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             try {
                 val r = RingtoneManager.getRingtone(this,
                     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 if (Build.VERSION.SDK_INT >= 28) r?.isLooping = true
                 r?.play()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
     }
 
@@ -172,20 +172,20 @@ class AlarmService : Service() {
                     v.vibrate(VibrationEffect.createWaveform(pat, 0))
                 else @Suppress("DEPRECATION") v.vibrate(pat, 0)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try { player?.stop(); player?.release() } catch (_: Exception) {}
+        try { player?.stop(); player?.release() } catch (e: Exception) {}
         player = null
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).cancel()
             else @Suppress("DEPRECATION")
                 (getSystemService(VIBRATOR_SERVICE) as Vibrator).cancel()
-        } catch (_: Exception) {}
-        try { wakeLock?.release() } catch (_: Exception) {}
+        } catch (e: Exception) {}
+        try { wakeLock?.release() } catch (e: Exception) {}
         stopForeground(true)
     }
 }

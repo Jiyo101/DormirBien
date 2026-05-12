@@ -1,6 +1,8 @@
 package com.dormirbien.app.ui
 
 import android.net.Uri
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,10 @@ private sealed class Dest(val route: String, val label: String, val icon: ImageV
 
 private val DESTS = listOf(Dest.Home, Dest.Cycles, Dest.History, Dest.Tips)
 
+// Same fade transition for every tab switch
+private val ENTER  = fadeIn(tween(180))
+private val EXIT   = fadeOut(tween(180))
+
 @Composable
 fun AppRoot(
     prefs:             AlarmPreferences,
@@ -61,7 +67,8 @@ fun AppRoot(
                         onClick  = {
                             nav.navigate(dest.route) {
                                 popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true; restoreState = true
+                                launchSingleTop = true
+                                restoreState    = true
                             }
                         },
                         icon  = { Icon(dest.icon, null) },
@@ -78,8 +85,15 @@ fun AppRoot(
             }
         }
     ) { pad ->
-        NavHost(nav, startDestination = Dest.Home.route,
-            modifier = Modifier.fillMaxSize().background(BG).padding(pad)) {
+        NavHost(
+            navController       = nav,
+            startDestination    = Dest.Home.route,
+            enterTransition     = { ENTER },
+            exitTransition      = { EXIT },
+            popEnterTransition  = { ENTER },
+            popExitTransition   = { EXIT },
+            modifier            = Modifier.fillMaxSize().background(BG).padding(pad),
+        ) {
             composable(Dest.Home.route) {
                 val ctx = androidx.compose.ui.platform.LocalContext.current
                 HomeRoute(
@@ -94,7 +108,7 @@ fun AppRoot(
                                 android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                 android.net.Uri.parse("package:${ctx.packageName}")
                             ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                        } catch (_: Exception) {}
+                        } catch (e: Exception) {}
                     },
                 )
             }

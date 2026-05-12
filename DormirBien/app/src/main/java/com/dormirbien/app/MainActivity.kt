@@ -180,42 +180,26 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 5. Xiaomi-specific: show a one-time guide for MIUI lock screen settings
-        //    These CANNOT be granted programmatically — the user must do it manually.
+        // 5. Xiaomi-specific one-time guide
         val sp = getSharedPreferences("db_sync", MODE_PRIVATE)
-        if (!sp.getBoolean("miui_guide_shown", false) && isMiui()) {
+        if (!sp.getBoolean("miui_guide_shown", false)) {
             sp.edit().putBoolean("miui_guide_shown", true).apply()
             AlertDialog.Builder(this)
-                .setTitle("⚠️ Configuración extra para Xiaomi")
+                .setTitle("Configuración pantalla de bloqueo")
                 .setMessage(
-                    "Para que la pantalla de alarma aparezca cuando el móvil está bloqueado, " +
-                    "necesitas activar DOS ajustes manualmente en MIUI:\n\n" +
-                    "1️⃣  Ajustes → Apps → DormirBien → Permisos →\n" +
-                    "    «Mostrar ventana emergente» → Activar\n\n" +
-                    "2️⃣  Ajustes → Apps → DormirBien → Permisos →\n" +
-                    "    «Mostrar en pantalla de bloqueo» → Activar\n\n" +
-                    "Sin estos dos ajustes, MIUI bloquea que cualquier app " +
-                    "muestre pantallas sobre el bloqueo."
+                    "Si tu móvil es Xiaomi, activa estos permisos una sola vez:\n\n" +
+                    "Ajustes → Apps → DormirBien → Otros permisos:\n" +
+                    "• Mostrar ventana emergente en segundo plano\n" +
+                    "• Mostrar en pantalla de bloqueo"
                 )
-                .setPositiveButton("Ir a ajustes de DormirBien") { _, _ ->
-                    try {
-                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.parse("package:$packageName")))
-                    } catch (_: Exception) {
-                        startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS))
-                    }
+                .setPositiveButton("Ir a ajustes") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$packageName")))
                 }
                 .setNegativeButton("Entendido", null)
                 .show()
         }
     }
-
-    private fun isMiui(): Boolean = try {
-        val cls = Class.forName("android.os.SystemProperties")
-        val get = cls.getMethod("get", String::class.java)
-        val prop = get.invoke(null, "ro.miui.ui.version.name") as? String
-        !prop.isNullOrEmpty()
-    } catch (_: Exception) { false }
 
     private fun dialog(title: String, msg: String, onOk: () -> Unit) {
         AlertDialog.Builder(this)

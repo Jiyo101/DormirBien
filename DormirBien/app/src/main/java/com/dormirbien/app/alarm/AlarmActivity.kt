@@ -128,7 +128,7 @@ class AlarmActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try { unregisterReceiver(dismissReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(dismissReceiver) } catch (e: Exception) {}
     }
 }
 

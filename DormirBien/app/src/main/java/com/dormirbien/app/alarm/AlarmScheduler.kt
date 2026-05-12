@@ -60,7 +60,7 @@ object AlarmScheduler {
                     am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
                 else -> am.setExact(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
             }
-        } catch (_: Exception) { am.set(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi) }
+        } catch (e: Exception) { am.set(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi) }
     }
 
     private fun cancel(ctx: Context, rc: Int) {
@@ -91,7 +91,7 @@ object AlarmScheduler {
                 putExtra(AlarmClock.EXTRA_SKIP_UI, true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 
     fun pad(n: Int) = n.toString().padStart(2, '0')
