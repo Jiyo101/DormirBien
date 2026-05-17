@@ -216,4 +216,4 @@ Desarrollado como proyecto de fin de grado (TFG).
 
 ---
 
-*Construido con ❤️ y Jetpack Compose*
+*Correccion de bugs y vulnerabilidades hechas con Claude Code*
