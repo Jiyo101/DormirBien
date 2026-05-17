@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
-import com.dormirbien.app.data.local.AlarmPreferences
 import com.dormirbien.app.ui.components.ReviewDialog
 import com.dormirbien.app.ui.cycles.CyclesRoute
 import com.dormirbien.app.ui.history.HistoryRoute
@@ -40,7 +39,6 @@ private val EXIT   = fadeOut(tween(180))
 
 @Composable
 fun AppRoot(
-    prefs:             AlarmPreferences,
     showReview:        Boolean,
     onReviewDismiss:   () -> Unit,
     onReviewSave:      (Int, String) -> Unit,
@@ -97,7 +95,6 @@ fun AppRoot(
             composable(Dest.Home.route) {
                 val ctx = androidx.compose.ui.platform.LocalContext.current
                 HomeRoute(
-                    prefs             = prefs,
                     onScheduleAlarms  = onScheduleAlarms,
                     onCancelAlarms    = onCancelAlarms,
                     onCancelBackup    = onCancelBackup,

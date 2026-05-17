@@ -42,7 +42,11 @@ class MainActivity : ComponentActivity() {
     private val exactLauncher   = registerForActivityResult(StartActivityForResult()) { askPermissions() }
     private val overlayLauncher = registerForActivityResult(StartActivityForResult()) { askPermissions() }
     private val soundLauncher   = registerForActivityResult(StartActivityForResult()) { r ->
-        val uri = r.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+        else
+            @Suppress("DEPRECATION")
+            r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
         if (uri != null) {
             lifecycleScope.launch { prefs.saveSoundUri(uri.toString()) }
             soundPickedCallback?.invoke(uri)
@@ -56,7 +60,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val review by showReview
             AppRoot(
-                prefs             = prefs,
                 showReview        = review,
                 onReviewDismiss   = { showReview.value = false },
                 onReviewSave      = { stars, feeling -> saveReview(stars, feeling) },
@@ -73,6 +76,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (prefs.isPendingReview()) {
             prefs.clearPendingReview()
+            lifecycleScope.launch { prefs.clearAlarm() }
             window.decorView.postDelayed({ showReview.value = true }, 400)
         }
     }
@@ -220,6 +224,7 @@ class MainActivity : ComponentActivity() {
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             enableVibration(true)
             enableLights(true)
+            lightColor = android.graphics.Color.parseColor("#7aaeff")
         })
     }
 

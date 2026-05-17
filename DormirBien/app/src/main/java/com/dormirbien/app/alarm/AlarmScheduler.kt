@@ -54,8 +54,19 @@ object AlarmScheduler {
         val pi = makePi(ctx, rc, h, m, cycles, hours, isBackup)
         try {
             when {
-                Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms() ->
-                    am.setAlarmClock(AlarmManager.AlarmClockInfo(cal.timeInMillis, pi), pi)
+                Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms() -> {
+                    // showIntent opens MainActivity when user taps the status-bar clock icon.
+                    // Must NOT be the fire PendingIntent — that would ring the alarm immediately.
+                    val launchIntent = ctx.packageManager
+                        .getLaunchIntentForPackage(ctx.packageName)
+                        ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ?: Intent().setPackage(ctx.packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val showPi = PendingIntent.getActivity(
+                        ctx, rc + 200, launchIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                    am.setAlarmClock(AlarmManager.AlarmClockInfo(cal.timeInMillis, showPi), pi)
+                }
                 Build.VERSION.SDK_INT >= 23 ->
                     am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
                 else -> am.setExact(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)

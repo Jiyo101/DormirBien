@@ -45,8 +45,6 @@ sealed interface HistoryUiState {
         val avg:       String,
         val goodDays:  Int,
         val streak:    Int,
-        val year:      Int,
-        val month:     Int,
     ) : HistoryUiState
 }
 
@@ -85,16 +83,12 @@ class HistoryViewModel @Inject constructor(
         var streak = 0
         val fmt    = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val cal    = Calendar.getInstance()
-        for (i in sorted.indices) {
-            val expected = fmt.format(cal.time)
-            val rec = sorted.getOrNull(streak)
-            if (rec != null && rec.dateKey == expected && rec.hours >= 7f) {
+        for (rec in sorted) {
+            if (rec.dateKey == fmt.format(cal.time) && rec.hours >= 7f) {
                 streak++; cal.add(Calendar.DAY_OF_YEAR, -1)
             } else break
         }
-        return HistoryUiState.Success(records, avg, good, streak,
-            Calendar.getInstance().get(Calendar.YEAR),
-            Calendar.getInstance().get(Calendar.MONTH))
+        return HistoryUiState.Success(records, avg, good, streak)
     }
 }
 
@@ -201,7 +195,7 @@ private fun CalGrid(year: Int, month: Int, records: List<SleepRecord>, onDayClic
     val today  = Calendar.getInstance()
     val recMap = records.associateBy { it.dateKey }
     val cells  = dow + days; val rows = (cells + 6) / 7
-    repeat(rows) { row ->
+    repeat(rows) rows@{ row ->
         Row(Modifier.fillMaxWidth()) {
             repeat(7) { col ->
                 val day = row * 7 + col - dow + 1
@@ -212,7 +206,7 @@ private fun CalGrid(year: Int, month: Int, records: List<SleepRecord>, onDayClic
                 val isToday = dayCal.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
                               dayCal.get(Calendar.MONTH) == today.get(Calendar.MONTH) &&
                               dayCal.get(Calendar.DAY_OF_MONTH) == today.get(Calendar.DAY_OF_MONTH)
-                val col2   = when { rec == null || rec.hours <= 0f -> null; rec.hours < 5f -> RED; rec.hours <= 7f -> YEL; else -> GRN }
+                val col2   = when { rec == null || rec.hours <= 0f -> null; rec.hours < 5f -> RED; rec.hours < 7f -> YEL; else -> GRN }
                 Box(
                     Modifier.weight(1f).aspectRatio(1f).padding(2.dp)
                         .background(col2?.copy(.13f) ?: CARD2, RoundedCornerShape(7.dp))
@@ -236,8 +230,8 @@ private fun CalGrid(year: Int, month: Int, records: List<SleepRecord>, onDayClic
 
 @Composable
 private fun SleepRow(rec: SleepRecord, onRate: () -> Unit) {
-    val col  = when { rec.hours < 5f -> RED; rec.hours <= 7f -> YEL; else -> GRN }
-    val lbl  = when { rec.hours < 5f -> "Insuficiente"; rec.hours <= 7f -> "Correcto"; else -> "Ideal" }
+    val col  = when { rec.hours < 5f -> RED; rec.hours < 7f -> YEL; else -> GRN }
+    val lbl  = when { rec.hours < 5f -> "Insuficiente"; rec.hours < 7f -> "Correcto"; else -> "Ideal" }
     val disp = try {
         val from = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val to   = SimpleDateFormat("EEE d MMM", Locale("es","ES"))

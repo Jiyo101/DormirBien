@@ -21,7 +21,7 @@ object DatabaseModule {
         Room.databaseBuilder(ctx, SleepDatabase::class.java, SleepDatabase.NAME)
             .fallbackToDestructiveMigration().build()
 
-    @Provides
+    @Provides @Singleton
     fun provideDao(db: SleepDatabase): SleepDao = db.sleepDao()
 }
 

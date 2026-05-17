@@ -1,7 +1,6 @@
 package com.dormirbien.app.ui.home
 
 import android.net.Uri
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.*
@@ -20,18 +19,15 @@ import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dormirbien.app.alarm.AlarmScheduler
-import com.dormirbien.app.data.local.AlarmPreferences
 import com.dormirbien.app.data.local.AlarmState
 import kotlinx.coroutines.delay
 import kotlin.math.*
-import kotlin.random.Random
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 private val BG   = Color(0xFF070B14)
 private val CARD = Color(0xFF0F1826)
 private val CARD2= Color(0xFF162035)
 private val ACC  = Color(0xFF5B7FFF)
-private val ACC2 = Color(0xFF9D7BFF)
 private val GRN  = Color(0xFF3ECF8E)
 private val RED  = Color(0xFFFF6B6B)
 private val TXT  = Color(0xFFDCE8FF)
@@ -43,7 +39,6 @@ private val BDR  = Color(0xFF5B7FFF).copy(alpha = 0.12f)
 
 @Composable
 fun HomeRoute(
-    prefs:             AlarmPreferences,
     onScheduleAlarms:  (Int, Int, Int, String) -> Unit,
     onCancelAlarms:    () -> Unit,
     onCancelBackup:    () -> Unit,
@@ -109,7 +104,7 @@ private fun HomeScreen(
                modifier = Modifier.fillMaxWidth()) {
             LogoRow()
             Spacer(Modifier.height(6.dp))
-            LiveClock(s.nowH, s.nowM)
+            LiveClock()
         }
 
         // Wake time picker
@@ -182,12 +177,16 @@ private fun DrawScope.drawLogo(S: Float) {
 // ── Live clock ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun LiveClock(h: Int, m: Int) {
-    var secs by remember { mutableStateOf(0) }
-    var dateStr by remember { mutableStateOf("") }
+private fun LiveClock() {
+    var h by remember { mutableStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) }
+    var m by remember { mutableStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE)) }
+    var secs by remember { mutableStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.SECOND)) }
+    var dateStr by remember { mutableStateOf(java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale("es","ES")).format(java.util.Date())) }
     LaunchedEffect(Unit) {
         while (true) {
             val c = java.util.Calendar.getInstance()
+            h = c.get(java.util.Calendar.HOUR_OF_DAY)
+            m = c.get(java.util.Calendar.MINUTE)
             secs = c.get(java.util.Calendar.SECOND)
             dateStr = java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale("es","ES")).format(java.util.Date())
             delay(1000)
@@ -232,20 +231,6 @@ private fun TimeCol(v: Int, up: () -> Unit, dn: () -> Unit) {
             Icon(Icons.Default.KeyboardArrowDown, null, tint = ACC, modifier = Modifier.size(20.dp))
         }
     }
-}
-
-// ── Onset slider ──────────────────────────────────────────────────────────────
-
-@Composable
-private fun OnsetSlider(v: Int, onChange: (Int) -> Unit) {
-    // kept for compatibility — not used directly in new layout
-}
-
-// ── Sound row ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SoundRow(onPick: ((Uri) -> Unit) -> Unit) {
-    // kept for compatibility — not used directly in new layout
 }
 
 // ── Combined settings row (onset + sound) ────────────────────────────────────
@@ -343,8 +328,6 @@ private fun MiuiGuideCard(onShowGuide: () -> Unit) {
 
 @Composable
 private fun MoonButton(onClick: () -> Unit) {
-    val pulse by rememberInfiniteTransition(label = "moon").animateFloat(
-        0.18f, 0.28f, infiniteRepeatable(tween(2000), RepeatMode.Reverse), label = "p")
     Box(Modifier.fillMaxWidth(), Alignment.Center) {
         Surface(onClick = onClick, shape = CircleShape, color = BG,
             border = BorderStroke(2.dp, ACC.copy(.5f)), modifier = Modifier.size(120.dp), shadowElevation = 8.dp) {

@@ -17,8 +17,6 @@ import kotlin.math.abs
 sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Success(
-        val nowH:       Int,
-        val nowM:       Int,
         val wakeH:      Int,
         val wakeM:      Int,
         val onset:      Int,
@@ -72,7 +70,6 @@ class HomeViewModel @Inject constructor(
         val now    = Calendar.getInstance()
         val opts   = computeOptions(now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE), onset, wH * 60 + wM)
         HomeUiState.Success(
-            nowH = now.get(Calendar.HOUR_OF_DAY), nowM = now.get(Calendar.MINUTE),
             wakeH = wH, wakeM = wM, onset = onset, alarm = alarm,
             options = opts, selected = sel ?: opts.firstOrNull { it.isBest },
             showModal = modal,
@@ -93,7 +90,7 @@ class HomeViewModel @Inject constructor(
         is HomeAction.SetOnset     -> { _onset.value = a.v; save() }
         is HomeAction.Pick         -> _selected.value = a.o
         HomeAction.OpenModal       -> _showModal.value = true
-        HomeAction.CloseModal      -> _showModal.value = false
+        HomeAction.CloseModal      -> { _showModal.value = false; _selected.value = null }
     }
 
     private fun save() { viewModelScope.launch { prefs.saveSettings(_wH.value, _wM.value, _onset.value) } }

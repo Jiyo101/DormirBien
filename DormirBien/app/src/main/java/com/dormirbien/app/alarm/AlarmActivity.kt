@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -54,6 +55,12 @@ import kotlin.random.Random
  */
 class AlarmActivity : ComponentActivity() {
 
+    private var alarmH        by mutableStateOf(7)
+    private var alarmM        by mutableStateOf(0)
+    private var alarmCycles   by mutableStateOf(0)
+    private var alarmHours    by mutableStateOf("")
+    private var alarmIsBackup by mutableStateOf(false)
+
     private val dismissReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, i: Intent) {
             if (i.action == AlarmScheduler.ACTION_DISMISS) finish()
@@ -91,11 +98,11 @@ class AlarmActivity : ComponentActivity() {
                 .requestDismissKeyguard(this, null)
         }
 
-        val h        = intent.getIntExtra(AlarmScheduler.EXTRA_H,      7)
-        val m        = intent.getIntExtra(AlarmScheduler.EXTRA_M,      0)
-        val cycles   = intent.getIntExtra(AlarmScheduler.EXTRA_CYCLES, 0)
-        val hours    = intent.getStringExtra(AlarmScheduler.EXTRA_HOURS) ?: ""
-        val isBackup = intent.getBooleanExtra(AlarmScheduler.EXTRA_BACKUP, false)
+        readIntent(intent)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { /* blocked — must use button or swipe */ }
+        })
 
         val filter = IntentFilter(AlarmScheduler.ACTION_DISMISS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -105,12 +112,26 @@ class AlarmActivity : ComponentActivity() {
 
         setContent {
             AlarmScreen(
-                h        = h, m = m, cycles = cycles,
-                hours    = hours, isBackup = isBackup,
+                h        = alarmH, m = alarmM, cycles = alarmCycles,
+                hours    = alarmHours, isBackup = alarmIsBackup,
                 onStop   = { stopAlarm() },
                 onCancel = { AlarmScheduler.cancelBackup(this); stopAlarm() },
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readIntent(intent)
+    }
+
+    private fun readIntent(i: Intent) {
+        alarmH        = i.getIntExtra(AlarmScheduler.EXTRA_H,      7)
+        alarmM        = i.getIntExtra(AlarmScheduler.EXTRA_M,      0)
+        alarmCycles   = i.getIntExtra(AlarmScheduler.EXTRA_CYCLES, 0)
+        alarmHours    = i.getStringExtra(AlarmScheduler.EXTRA_HOURS) ?: ""
+        alarmIsBackup = i.getBooleanExtra(AlarmScheduler.EXTRA_BACKUP, false)
     }
 
     private fun stopAlarm() {
@@ -122,9 +143,6 @@ class AlarmActivity : ComponentActivity() {
             .apply()
         finish()
     }
-
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() { /* blocked — must use button or swipe */ }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -169,11 +187,11 @@ private fun AlarmScreen(
 
             // ── Date + big time ───────────────────────────────────────────
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                var dateStr by remember { mutableStateOf("") }
+                var dateStr by remember { mutableStateOf(SimpleDateFormat("dd MMM EEEE", Locale("es","ES")).format(Date())) }
                 LaunchedEffect(Unit) {
                     while (true) {
-                        dateStr = SimpleDateFormat("dd MMM EEEE", Locale("es","ES")).format(Date())
                         delay(60_000)
+                        dateStr = SimpleDateFormat("dd MMM EEEE", Locale("es","ES")).format(Date())
                     }
                 }
                 Text(dateStr, color = Color(0xFFCCDDEE), fontSize = 15.sp, letterSpacing = 0.3.sp)
@@ -223,15 +241,17 @@ private fun AlarmScreen(
                     }
                 }
 
-                // Cancel backup alarm (outline, smaller)
-                OutlinedButton(
-                    onClick  = onCancel,
-                    shape    = RoundedCornerShape(14.dp),
-                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF6B6B)),
-                    border   = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF6B6B).copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth(0.72f).height(46.dp),
-                ) {
-                    Text("✕  Cancelar recordatorio +5 min", fontSize = 13.sp)
+                // Cancel backup alarm — only relevant when the main alarm is ringing
+                if (!isBackup) {
+                    OutlinedButton(
+                        onClick  = onCancel,
+                        shape    = RoundedCornerShape(14.dp),
+                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF6B6B)),
+                        border   = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF6B6B).copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth(0.72f).height(46.dp),
+                    ) {
+                        Text("✕  Cancelar recordatorio +5 min", fontSize = 13.sp)
+                    }
                 }
             }
 

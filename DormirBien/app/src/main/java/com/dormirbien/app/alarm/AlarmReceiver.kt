@@ -21,15 +21,34 @@ class AlarmReceiver : BroadcastReceiver() {
                     .putBoolean("set", false)
                     .putBoolean("pending_review", true)
                     .apply()
+                // Notify AlarmActivity (if it's on screen) to finish.
+                // The dismissPi in AlarmService targets this receiver explicitly,
+                // so AlarmActivity's dynamically-registered dismissReceiver never
+                // sees the original broadcast — this implicit package-scoped broadcast
+                // reaches it on API 26+ (dynamic receivers are exempt from the
+                // implicit-broadcast restriction that blocks manifest receivers).
+                ctx.sendBroadcast(
+                    Intent(AlarmScheduler.ACTION_DISMISS)
+                        .setPackage(ctx.packageName)
+                        .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY)
+                )
             }
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED -> {
-                val p = ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE)
-                if (!p.getBoolean("set", false)) return
-                AlarmScheduler.rescheduleAfterBoot(ctx,
-                    p.getInt("h1", 7), p.getInt("m1", 0),
-                    p.getInt("h2", 7), p.getInt("m2", 5),
-                    p.getInt("cycles", 0), p.getString("hours", "") ?: "")
+                // LOCKED_BOOT_COMPLETED fires before the user unlocks the device.
+                // Credential-encrypted SharedPreferences (MODE_PRIVATE) may be inaccessible
+                // in Direct Boot mode and throw on strict implementations.
+                // If that happens, BOOT_COMPLETED (fires after first unlock) will retry.
+                try {
+                    val p = ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE)
+                    if (!p.getBoolean("set", false)) return
+                    AlarmScheduler.rescheduleAfterBoot(ctx,
+                        p.getInt("h1", 7), p.getInt("m1", 0),
+                        p.getInt("h2", 7), p.getInt("m2", 5),
+                        p.getInt("cycles", 0), p.getString("hours", "") ?: "")
+                } catch (e: Exception) {
+                    // Credential storage locked (Direct Boot). Alarm rescheduled on BOOT_COMPLETED.
+                }
             }
         }
     }

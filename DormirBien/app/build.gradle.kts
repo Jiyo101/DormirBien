@@ -58,4 +58,11 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.google.material)
 }
-kapt { correctErrorTypes = true }
+kapt {
+    correctErrorTypes = true
+    javacOptions {
+        // Suppress "option not recognized by any processor" noise from KAPT passing
+        // Hilt-specific options globally to all annotation processors.
+        option("-Xlint:-processing")
+    }
+}

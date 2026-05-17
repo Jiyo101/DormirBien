@@ -32,11 +32,26 @@ class AlarmService : Service() {
     override fun onBind(intent: Intent?) = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val h        = intent?.getIntExtra(AlarmScheduler.EXTRA_H,      7)  ?: 7
-        val m        = intent?.getIntExtra(AlarmScheduler.EXTRA_M,      0)  ?: 0
-        val cycles   = intent?.getIntExtra(AlarmScheduler.EXTRA_CYCLES, 0)  ?: 0
-        val hours    = intent?.getStringExtra(AlarmScheduler.EXTRA_HOURS)   ?: ""
-        val isBackup = intent?.getBooleanExtra(AlarmScheduler.EXTRA_BACKUP, false) ?: false
+        if (intent == null) { stopSelf(); return START_NOT_STICKY }
+
+        // Release any resources from a previous onStartCommand call.
+        // This can happen if the backup alarm fires while the main alarm is still ringing.
+        try { player?.stop(); player?.release() } catch (e: Exception) {}
+        player = null
+        try { wakeLock?.release() } catch (e: Exception) {}
+        wakeLock = null
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).cancel()
+            else @Suppress("DEPRECATION")
+                (getSystemService(VIBRATOR_SERVICE) as Vibrator).cancel()
+        } catch (e: Exception) {}
+
+        val h        = intent.getIntExtra(AlarmScheduler.EXTRA_H,      7)
+        val m        = intent.getIntExtra(AlarmScheduler.EXTRA_M,      0)
+        val cycles   = intent.getIntExtra(AlarmScheduler.EXTRA_CYCLES, 0)
+        val hours    = intent.getStringExtra(AlarmScheduler.EXTRA_HOURS)   ?: ""
+        val isBackup = intent.getBooleanExtra(AlarmScheduler.EXTRA_BACKUP, false)
 
         // Mark pending review for MainActivity.onResume()
         getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
@@ -109,7 +124,7 @@ class AlarmService : Service() {
 
         playSound()
         vibrate()
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun ensureChannel() {
@@ -138,6 +153,7 @@ class AlarmService : Service() {
             val uri: Uri = if (!customUri.isNullOrEmpty()) Uri.parse(customUri)
                 else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                     ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                    ?: throw Exception("No alarm sound URI available")
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
@@ -186,6 +202,6 @@ class AlarmService : Service() {
                 (getSystemService(VIBRATOR_SERVICE) as Vibrator).cancel()
         } catch (e: Exception) {}
         try { wakeLock?.release() } catch (e: Exception) {}
-        stopForeground(true)
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
 }
