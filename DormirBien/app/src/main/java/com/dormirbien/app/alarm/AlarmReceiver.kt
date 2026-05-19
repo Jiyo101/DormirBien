@@ -9,6 +9,18 @@ class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
             AlarmScheduler.ACTION_FIRE -> {
+                val isBackup = intent.getBooleanExtra(AlarmScheduler.EXTRA_BACKUP, false)
+                if (!isBackup) {
+                    // Main alarm fired: schedule backup for exactly 5 minutes from now
+                    val cycles = intent.getIntExtra(AlarmScheduler.EXTRA_CYCLES, 0)
+                    val hours  = intent.getStringExtra(AlarmScheduler.EXTRA_HOURS) ?: ""
+                    AlarmScheduler.scheduleBackup(ctx, cycles, hours)
+                } else {
+                    // Backup alarm fired: mark it consumed
+                    ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
+                        .putBoolean("backup_pending", false)
+                        .apply()
+                }
                 val svc = Intent(ctx, AlarmService::class.java).apply { putExtras(intent) }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     ctx.startForegroundService(svc)
@@ -41,11 +53,20 @@ class AlarmReceiver : BroadcastReceiver() {
                 // If that happens, BOOT_COMPLETED (fires after first unlock) will retry.
                 try {
                     val p = ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE)
-                    if (!p.getBoolean("set", false)) return
-                    AlarmScheduler.rescheduleAfterBoot(ctx,
-                        p.getInt("h1", 7), p.getInt("m1", 0),
-                        p.getInt("h2", 7), p.getInt("m2", 5),
-                        p.getInt("cycles", 0), p.getString("hours", "") ?: "")
+                    if (p.getBoolean("set", false)) {
+                        AlarmScheduler.rescheduleAfterBoot(ctx,
+                            p.getInt("h1", 7), p.getInt("m1", 0),
+                            p.getInt("cycles", 0), p.getString("hours", "") ?: "")
+                    }
+                    if (p.getBoolean("backup_pending", false)) {
+                        val backupMillis = p.getLong("backup_millis", 0L)
+                        if (backupMillis > System.currentTimeMillis()) {
+                            AlarmScheduler.rescheduleBackupMillis(ctx, backupMillis,
+                                p.getInt("cycles", 0), p.getString("hours", "") ?: "")
+                        } else {
+                            p.edit().putBoolean("backup_pending", false).apply()
+                        }
+                    }
                 } catch (e: Exception) {
                     // Credential storage locked (Direct Boot). Alarm rescheduled on BOOT_COMPLETED.
                 }
