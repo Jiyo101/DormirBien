@@ -137,6 +137,7 @@ class AlarmService : Service() {
         ).apply {
             setBypassDnd(true)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            setSound(null, null)  // MediaPlayer handles audio; no channel sound interference
             enableVibration(true)
             enableLights(true)
             lightColor = Color.parseColor("#7aaeff")

@@ -8,15 +8,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 data class SleepRecord(
-    val dateKey: String,
-    val hours:   Float  = 0f,
-    val stars:   Int    = 0,
-    val feeling: String = "",
+    val id:        Long   = 0,
+    val dateKey:   String,
+    val hours:     Float  = 0f,
+    val stars:     Int    = 0,
+    val feeling:   String = "",
+    val createdAt: Long   = System.currentTimeMillis(),
 )
 
 interface SleepRepository {
     fun observeAll(): Flow<List<SleepRecord>>
     suspend fun getByKey(key: String): SleepRecord?
+    suspend fun getLatestUnreviewedByKey(key: String): SleepRecord?
     suspend fun upsert(record: SleepRecord)
 }
 
@@ -25,16 +28,18 @@ class OfflineFirstSleepRepository @Inject constructor(
     private val dao: SleepDao,
 ) : SleepRepository {
 
-    // Reactive stream — Room emits whenever DB changes
     override fun observeAll(): Flow<List<SleepRecord>> =
         dao.observeAll().map { list -> list.map { it.toDomain() } }
 
     override suspend fun getByKey(key: String): SleepRecord? =
         dao.getByKey(key)?.toDomain()
 
+    override suspend fun getLatestUnreviewedByKey(key: String): SleepRecord? =
+        dao.getLatestUnreviewedByKey(key)?.toDomain()
+
     override suspend fun upsert(record: SleepRecord) =
         dao.upsert(record.toEntity())
 
-    private fun SleepRecordEntity.toDomain() = SleepRecord(dateKey, hours, stars, feeling)
-    private fun SleepRecord.toEntity()       = SleepRecordEntity(dateKey, hours, stars, feeling)
+    private fun SleepRecordEntity.toDomain() = SleepRecord(id, dateKey, hours, stars, feeling, createdAt)
+    private fun SleepRecord.toEntity()       = SleepRecordEntity(id, dateKey, hours, stars, feeling, createdAt)
 }

@@ -18,7 +18,7 @@ object AlarmScheduler {
     const val EXTRA_BACKUP   = "is_backup"
     const val RC_MAIN        = 100
     const val RC_BACKUP      = 101
-    const val CHANNEL_ID     = "db_alarm_v3"
+    const val CHANNEL_ID     = "db_alarm_v4"
     const val NOTIF_ID       = 42
 
     // Only schedules the main alarm. The backup is scheduled dynamically when the main fires.

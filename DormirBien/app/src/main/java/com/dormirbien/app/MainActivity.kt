@@ -89,10 +89,16 @@ class MainActivity : ComponentActivity() {
         AlarmScheduler.schedule(this, h1, m1, cycles, hoursText)
         lifecycleScope.launch {
             prefs.saveAlarm(h1, m1, h2, m2, cycles, hoursText)
-            val key = todayKey()
-            val existing = sleepRepo.getByKey(key)
-            sleepRepo.upsert(SleepRecord(key, cycles * 90f / 60f,
-                existing?.stars ?: 0, existing?.feeling ?: ""))
+            val key   = todayKey()
+            val hours = cycles * 90f / 60f
+            // Reuse the latest unreviewed session for the day (handles cancel-reschedule).
+            // If already reviewed, create a new session (genuine second sleep/nap).
+            val unreviewed = sleepRepo.getLatestUnreviewedByKey(key)
+            if (unreviewed != null) {
+                sleepRepo.upsert(unreviewed.copy(hours = hours))
+            } else {
+                sleepRepo.upsert(SleepRecord(dateKey = key, hours = hours))
+            }
         }
         Toast.makeText(this,
             "✅ Alarmas: ${AlarmScheduler.pad(h1)}:${AlarmScheduler.pad(m1)}" +
@@ -113,9 +119,10 @@ class MainActivity : ComponentActivity() {
 
     private fun saveReview(stars: Int, feeling: String) {
         lifecycleScope.launch {
-            val key = todayKey()
-            val existing = sleepRepo.getByKey(key)
-            sleepRepo.upsert(SleepRecord(key, existing?.hours ?: 0f, stars, feeling))
+            val existing = sleepRepo.getByKey(todayKey())
+            if (existing != null) {
+                sleepRepo.upsert(existing.copy(stars = stars, feeling = feeling))
+            }
         }
     }
 
@@ -222,6 +229,7 @@ class MainActivity : ComponentActivity() {
             NotificationManager.IMPORTANCE_HIGH).apply {
             setBypassDnd(true)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            setSound(null, null)  // MediaPlayer handles audio; no channel sound interference
             enableVibration(true)
             enableLights(true)
             lightColor = android.graphics.Color.parseColor("#7aaeff")

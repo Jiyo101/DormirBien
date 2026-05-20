@@ -41,10 +41,10 @@ private val TXT3 = Color(0xFF3A4F6E)
 sealed interface HistoryUiState {
     object Loading : HistoryUiState
     data class Success(
-        val records:   List<SleepRecord>,
-        val avg:       String,
-        val goodDays:  Int,
-        val streak:    Int,
+        val records:  List<SleepRecord>,
+        val avg:      String,
+        val goodDays: Int,
+        val streak:   Int,
     ) : HistoryUiState
 }
 
@@ -60,7 +60,6 @@ class HistoryViewModel @Inject constructor(
     val year:  StateFlow<Int> = _year
     val month: StateFlow<Int> = _month
 
-    // Reactive — recomposes whenever Room emits new data
     val uiState: StateFlow<HistoryUiState> = repo.observeAll()
         .map { records -> buildState(records) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState.Loading)
@@ -68,26 +67,30 @@ class HistoryViewModel @Inject constructor(
     fun prevMonth() { if (_month.value == 0) { _month.value = 11; _year.value-- } else _month.value-- }
     fun nextMonth() { if (_month.value == 11) { _month.value = 0; _year.value++ } else _month.value++ }
 
-    fun saveReview(dateKey: String, stars: Int, feeling: String) {
+    fun saveReview(record: SleepRecord, stars: Int, feeling: String) {
         viewModelScope.launch {
-            val existing = repo.getByKey(dateKey)
-            repo.upsert(SleepRecord(dateKey, existing?.hours ?: 0f, stars, feeling))
+            repo.upsert(record.copy(stars = stars, feeling = feeling))
         }
     }
 
     private fun buildState(records: List<SleepRecord>): HistoryUiState.Success {
-        val withH = records.filter { it.hours > 0f }
-        val avg   = if (withH.isEmpty()) "--" else "%.1fh".format(withH.sumOf { it.hours.toDouble() } / withH.size)
-        val good  = withH.count { it.hours >= 7f }
-        val sorted = records.sortedByDescending { it.dateKey }
+        // Group by day and compute daily totals
+        val byDay      = records.groupBy { it.dateKey }
+        val dailySums  = byDay.mapValues { (_, recs) -> recs.sumOf { it.hours.toDouble() }.toFloat() }
+        val daysWithH  = dailySums.values.filter { it > 0f }
+
+        val avg   = if (daysWithH.isEmpty()) "--" else "%.1fh".format(daysWithH.sum() / daysWithH.size)
+        val good  = daysWithH.count { it >= 7f }
+
+        val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val cal = Calendar.getInstance()
         var streak = 0
-        val fmt    = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val cal    = Calendar.getInstance()
-        for (rec in sorted) {
-            if (rec.dateKey == fmt.format(cal.time) && rec.hours >= 7f) {
+        for ((dayKey, daySum) in dailySums.entries.sortedByDescending { it.key }) {
+            if (dayKey == fmt.format(cal.time) && daySum >= 7f) {
                 streak++; cal.add(Calendar.DAY_OF_YEAR, -1)
             } else break
         }
+
         return HistoryUiState.Success(records, avg, good, streak)
     }
 }
@@ -104,10 +107,10 @@ fun HistoryRoute(vm: HistoryViewModel = hiltViewModel()) {
             CircularProgressIndicator(color = ACC)
         }
         is HistoryUiState.Success -> HistoryScreen(
-            s         = state as HistoryUiState.Success,
-            year      = year, month = month,
-            onPrev    = vm::prevMonth, onNext = vm::nextMonth,
-            onReview  = { key, stars, feeling -> vm.saveReview(key, stars, feeling) },
+            s        = state as HistoryUiState.Success,
+            year     = year, month = month,
+            onPrev   = vm::prevMonth, onNext = vm::nextMonth,
+            onReview = { rec, stars, feeling -> vm.saveReview(rec, stars, feeling) },
         )
     }
 }
@@ -118,15 +121,19 @@ private fun HistoryScreen(
     s:        HistoryUiState.Success,
     year:     Int, month: Int,
     onPrev:   () -> Unit, onNext: () -> Unit,
-    onReview: (String, Int, String) -> Unit,
+    onReview: (SleepRecord, Int, String) -> Unit,
 ) {
-    var reviewKey by remember { mutableStateOf<String?>(null) }
-    reviewKey?.let { key ->
+    var reviewRecord by remember { mutableStateOf<SleepRecord?>(null) }
+    reviewRecord?.let { rec ->
         com.dormirbien.app.ui.components.ReviewDialog(
-            onDismiss = { reviewKey = null },
-            onSave    = { stars, feeling -> onReview(key, stars, feeling); reviewKey = null },
+            onDismiss = { reviewRecord = null },
+            onSave    = { stars, feeling -> onReview(rec, stars, feeling); reviewRecord = null },
         )
     }
+
+    val sorted = s.records.sortedWith(
+        compareByDescending<SleepRecord> { it.dateKey }.thenByDescending { it.id }
+    )
 
     Column(
         Modifier.fillMaxSize().background(BG).verticalScroll(rememberScrollState()).padding(16.dp),
@@ -134,14 +141,12 @@ private fun HistoryScreen(
     ) {
         Text("Historial", color = TXT, fontSize = 22.sp, fontWeight = FontWeight.Bold)
 
-        // Stats — all computed from real Room data
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatCard(s.avg,                 "Media",   ACC,  Modifier.weight(1f))
-            StatCard("${s.goodDays}",       "Días ✓",  GRN,  Modifier.weight(1f))
-            StatCard("${s.streak}d",        "Racha",   ACC2, Modifier.weight(1f))
+            StatCard(s.avg,           "Media",  ACC,  Modifier.weight(1f))
+            StatCard("${s.goodDays}", "Días ✓", GRN,  Modifier.weight(1f))
+            StatCard("${s.streak}d",  "Racha",  ACC2, Modifier.weight(1f))
         }
 
-        // Calendar — real data only
         Card(colors = CardDefaults.cardColors(containerColor = CARD),
             shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
@@ -158,7 +163,7 @@ private fun HistoryScreen(
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                CalGrid(year, month, s.records) { key -> reviewKey = key }
+                CalGrid(year, month, s.records) { rec -> reviewRecord = rec }
             }
         }
 
@@ -166,9 +171,9 @@ private fun HistoryScreen(
             LegendDot(GRN, "+7h ideal"); LegendDot(YEL, "5-7h"); LegendDot(RED, "-5h")
         }
 
-        Text("ÚLTIMAS NOCHES", color = TXT3, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+        Text("TODAS LAS SESIONES", color = TXT3, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
 
-        if (s.records.isEmpty()) {
+        if (sorted.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🌙", fontSize = 40.sp)
@@ -178,8 +183,8 @@ private fun HistoryScreen(
                 }
             }
         } else {
-            s.records.sortedByDescending { it.dateKey }.take(14).forEach { rec ->
-                SleepRow(rec) { reviewKey = rec.dateKey }
+            sorted.forEach { rec ->
+                SleepRow(rec) { reviewRecord = rec }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -187,40 +192,42 @@ private fun HistoryScreen(
 }
 
 @Composable
-private fun CalGrid(year: Int, month: Int, records: List<SleepRecord>, onDayClick: (String) -> Unit) {
-    val fmt    = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    val cal    = Calendar.getInstance().apply { set(year, month, 1) }
-    val days   = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-    var dow    = cal.get(Calendar.DAY_OF_WEEK) - 2; if (dow < 0) dow = 6
-    val today  = Calendar.getInstance()
-    val recMap = records.associateBy { it.dateKey }
-    val cells  = dow + days; val rows = (cells + 6) / 7
+private fun CalGrid(year: Int, month: Int, records: List<SleepRecord>, onDayClick: (SleepRecord) -> Unit) {
+    val fmt   = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val cal   = Calendar.getInstance().apply { set(year, month, 1) }
+    val days  = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    var dow   = cal.get(Calendar.DAY_OF_WEEK) - 2; if (dow < 0) dow = 6
+    val today = Calendar.getInstance()
+    val byDay = records.groupBy { it.dateKey }
+    val cells = dow + days; val rows = (cells + 6) / 7
     repeat(rows) rows@{ row ->
         Row(Modifier.fillMaxWidth()) {
             repeat(7) { col ->
                 val day = row * 7 + col - dow + 1
                 if (day < 1 || day > days) { Box(Modifier.weight(1f).aspectRatio(1f)); return@repeat }
-                val dayCal = Calendar.getInstance().apply { set(year, month, day) }
-                val key    = fmt.format(dayCal.time)
-                val rec    = recMap[key]
-                val isToday = dayCal.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-                              dayCal.get(Calendar.MONTH) == today.get(Calendar.MONTH) &&
+                val dayCal  = Calendar.getInstance().apply { set(year, month, day) }
+                val key     = fmt.format(dayCal.time)
+                val dayRecs = byDay[key] ?: emptyList()
+                val sum     = dayRecs.sumOf { it.hours.toDouble() }.toFloat()
+                val latest  = dayRecs.maxByOrNull { it.id }
+                val isToday = dayCal.get(Calendar.YEAR)         == today.get(Calendar.YEAR) &&
+                              dayCal.get(Calendar.MONTH)        == today.get(Calendar.MONTH) &&
                               dayCal.get(Calendar.DAY_OF_MONTH) == today.get(Calendar.DAY_OF_MONTH)
-                val col2   = when { rec == null || rec.hours <= 0f -> null; rec.hours < 5f -> RED; rec.hours < 7f -> YEL; else -> GRN }
+                val color   = when { sum <= 0f -> null; sum < 5f -> RED; sum < 7f -> YEL; else -> GRN }
                 Box(
                     Modifier.weight(1f).aspectRatio(1f).padding(2.dp)
-                        .background(col2?.copy(.13f) ?: CARD2, RoundedCornerShape(7.dp))
+                        .background(color?.copy(.13f) ?: CARD2, RoundedCornerShape(7.dp))
                         .border(if (isToday) 1.5.dp else 1.dp,
-                            if (isToday) ACC else col2?.copy(.28f) ?: TXT3.copy(.1f),
+                            if (isToday) ACC else color?.copy(.28f) ?: TXT3.copy(.1f),
                             RoundedCornerShape(7.dp))
-                        .then(if (rec != null) Modifier.clickable { onDayClick(key) } else Modifier),
+                        .then(if (latest != null) Modifier.clickable { onDayClick(latest) } else Modifier),
                     Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("$day", color = if (isToday) ACC else col2 ?: TXT3,
+                        Text("$day", color = if (isToday) ACC else color ?: TXT3,
                             fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        if (rec != null && rec.hours > 0f)
-                            Text("%.1fh".format(rec.hours), color = col2!!.copy(.8f), fontSize = 7.sp)
+                        if (sum > 0f)
+                            Text("%.1fh".format(sum), color = color!!.copy(.8f), fontSize = 7.sp)
                     }
                 }
             }
@@ -230,11 +237,11 @@ private fun CalGrid(year: Int, month: Int, records: List<SleepRecord>, onDayClic
 
 @Composable
 private fun SleepRow(rec: SleepRecord, onRate: () -> Unit) {
-    val col  = when { rec.hours < 5f -> RED; rec.hours < 7f -> YEL; else -> GRN }
-    val lbl  = when { rec.hours < 5f -> "Insuficiente"; rec.hours < 7f -> "Correcto"; else -> "Ideal" }
+    val col  = when { rec.hours <= 0f -> TXT3; rec.hours < 5f -> RED; rec.hours < 7f -> YEL; else -> GRN }
+    val lbl  = when { rec.hours <= 0f -> "Sin datos"; rec.hours < 5f -> "Insuficiente"; rec.hours < 7f -> "Correcto"; else -> "Ideal" }
     val disp = try {
         val from = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val to   = SimpleDateFormat("EEE d MMM", Locale("es","ES"))
+        val to   = SimpleDateFormat("EEE d MMM", Locale("es", "ES"))
         to.format(from.parse(rec.dateKey)!!)
     } catch (e: Exception) { rec.dateKey }
     Surface(color = CARD, shape = RoundedCornerShape(12.dp),
