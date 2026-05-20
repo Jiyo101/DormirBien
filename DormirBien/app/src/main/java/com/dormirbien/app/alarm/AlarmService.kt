@@ -53,10 +53,10 @@ class AlarmService : Service() {
         val hours    = intent.getStringExtra(AlarmScheduler.EXTRA_HOURS)   ?: ""
         val isBackup = intent.getBooleanExtra(AlarmScheduler.EXTRA_BACKUP, false)
 
-        // Mark pending review for MainActivity.onResume()
+        // Mark pending review for MainActivity.onResume().
+        // The "set" / "backup_pending" flags are cleared by AlarmReceiver before this runs.
         getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
             .putBoolean("pending_review", true)
-            .putBoolean("set", false)
             .apply()
 
         // Wake screen and keep CPU alive

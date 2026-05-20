@@ -136,9 +136,14 @@ class AlarmActivity : ComponentActivity() {
 
     private fun stopAlarm() {
         stopService(Intent(this, AlarmService::class.java))
-        AlarmScheduler.cancelAll(this)
+        if (alarmIsBackup) {
+            // Backup is the last alarm — cancel everything.
+            AlarmScheduler.cancelAll(this)
+        } else {
+            // Main alarm dismissed — cancel only main; backup fires independently in ~5 min.
+            AlarmScheduler.cancelMain(this)
+        }
         getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
-            .putBoolean("set",            false)
             .putBoolean("pending_review", true)
             .apply()
         finish()

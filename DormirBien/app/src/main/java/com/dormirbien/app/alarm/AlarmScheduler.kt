@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.provider.AlarmClock
 import java.util.Calendar
@@ -21,36 +22,65 @@ object AlarmScheduler {
     const val CHANNEL_ID     = "db_alarm_v4"
     const val NOTIF_ID       = 42
 
-    // Only schedules the main alarm. The backup is scheduled dynamically when the main fires.
+    /**
+     * Schedules both alarms immediately when the user confirms the alarm time.
+     * RC_MAIN fires at h1:m1, RC_BACKUP fires exactly 5 minutes later.
+     * Both are independent AlarmManager alarms; neither creates the other at runtime.
+     */
     fun schedule(ctx: Context, h1: Int, m1: Int, cycles: Int, hoursText: String) {
-        exact(ctx, h1, m1, cycles, hoursText, RC_MAIN, isBackup = false)
+        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        // Compute exact millisecond for main alarm (next occurrence of h1:m1)
+        val cal1 = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, h1); set(Calendar.MINUTE, m1)
+            set(Calendar.SECOND, 0);       set(Calendar.MILLISECOND, 0)
+            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+        }
+        val mainMillis   = cal1.timeInMillis
+        val backupMillis = mainMillis + 5 * 60 * 1000L
+        val cal2         = Calendar.getInstance().apply { timeInMillis = backupMillis }
+        val h2 = cal2.get(Calendar.HOUR_OF_DAY)
+        val m2 = cal2.get(Calendar.MINUTE)
+
+        val mainPi   = makePi(ctx, RC_MAIN,   h1, m1, cycles, hoursText, isBackup = false)
+        val backupPi = makePi(ctx, RC_BACKUP, h2, m2, cycles, hoursText, isBackup = true)
+
+        scheduleExactMillis(ctx, am, mainMillis,   mainPi,   RC_MAIN)
+        scheduleExactMillis(ctx, am, backupMillis, backupPi, RC_BACKUP)
+
+        ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
+            .putBoolean("set",            true)
+            .putBoolean("backup_pending", true)
+            .putInt("h1", h1).putInt("m1", m1)
+            .putInt("h2", h2).putInt("m2", m2)
+            .putInt("cycles", cycles).putString("hours", hoursText)
+            .putLong("main_millis",   mainMillis)
+            .putLong("backup_millis", backupMillis)
+            .apply()
+
         systemClock(ctx, h1, m1, "DormirBien · Despertar ($cycles ciclos)")
     }
 
-    // Called from AlarmReceiver when the main alarm fires. Schedules backup for exactly +5 min.
-    fun scheduleBackup(ctx: Context, cycles: Int, hoursText: String) {
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val backupMillis = System.currentTimeMillis() + 5 * 60 * 1000L
-        val cal = Calendar.getInstance().apply { timeInMillis = backupMillis }
-        val h2 = cal.get(Calendar.HOUR_OF_DAY)
-        val m2 = cal.get(Calendar.MINUTE)
-        val pi = makePi(ctx, RC_BACKUP, h2, m2, cycles, hoursText, isBackup = true)
-        scheduleExactMillis(ctx, am, backupMillis, pi, RC_BACKUP)
-        ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
-            .putBoolean("backup_pending", true)
-            .putLong("backup_millis", backupMillis)
-            .putInt("h2", h2).putInt("m2", m2)
-            .apply()
-    }
-
+    /** Cancels both alarms. Used when the user explicitly dismisses from the backup alarm
+     *  or via the notification "Detener" button. */
     fun cancelAll(ctx: Context) {
         cancel(ctx, RC_MAIN)
         cancel(ctx, RC_BACKUP)
         ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
+            .putBoolean("set",            false)
             .putBoolean("backup_pending", false)
             .apply()
     }
 
+    /** Cancels only the main alarm, leaving the backup intact. */
+    fun cancelMain(ctx: Context) {
+        cancel(ctx, RC_MAIN)
+        ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
+            .putBoolean("set", false)
+            .apply()
+    }
+
+    /** Cancels only the backup alarm. */
     fun cancelBackup(ctx: Context) {
         cancel(ctx, RC_BACKUP)
         ctx.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
@@ -58,29 +88,36 @@ object AlarmScheduler {
             .apply()
     }
 
-    fun rescheduleAfterBoot(ctx: Context, h1: Int, m1: Int, cycles: Int, hoursText: String) {
-        exact(ctx, h1, m1, cycles, hoursText, RC_MAIN, false)
-    }
+    /**
+     * Re-registers pending alarms after device reboot.
+     * Each alarm is only rescheduled if its target time is still in the future.
+     */
+    fun rescheduleAfterBoot(ctx: Context, p: SharedPreferences) {
+        val am      = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val now     = System.currentTimeMillis()
+        val cycles  = p.getInt("cycles", 0)
+        val hours   = p.getString("hours", "") ?: ""
 
-    fun rescheduleBackupMillis(ctx: Context, backupMillis: Long, cycles: Int, hoursText: String) {
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val cal = Calendar.getInstance().apply { timeInMillis = backupMillis }
-        val h2 = cal.get(Calendar.HOUR_OF_DAY)
-        val m2 = cal.get(Calendar.MINUTE)
-        val pi = makePi(ctx, RC_BACKUP, h2, m2, cycles, hoursText, isBackup = true)
-        scheduleExactMillis(ctx, am, backupMillis, pi, RC_BACKUP)
-    }
-
-    private fun exact(ctx: Context, h: Int, m: Int, cycles: Int, hours: String,
-                       rc: Int, isBackup: Boolean) {
-        val am  = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, h); set(Calendar.MINUTE, m)
-            set(Calendar.SECOND, 0);      set(Calendar.MILLISECOND, 0)
-            if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+        if (p.getBoolean("set", false)) {
+            val mainMillis = p.getLong("main_millis", 0L)
+            val h1 = p.getInt("h1", 7); val m1 = p.getInt("m1", 0)
+            if (mainMillis > now) {
+                val pi = makePi(ctx, RC_MAIN, h1, m1, cycles, hours, isBackup = false)
+                scheduleExactMillis(ctx, am, mainMillis, pi, RC_MAIN)
+            } else {
+                p.edit().putBoolean("set", false).apply()
+            }
         }
-        val pi = makePi(ctx, rc, h, m, cycles, hours, isBackup)
-        scheduleExactMillis(ctx, am, cal.timeInMillis, pi, rc)
+        if (p.getBoolean("backup_pending", false)) {
+            val backupMillis = p.getLong("backup_millis", 0L)
+            val h2 = p.getInt("h2", 7); val m2 = p.getInt("m2", 5)
+            if (backupMillis > now) {
+                val pi = makePi(ctx, RC_BACKUP, h2, m2, cycles, hours, isBackup = true)
+                scheduleExactMillis(ctx, am, backupMillis, pi, RC_BACKUP)
+            } else {
+                p.edit().putBoolean("backup_pending", false).apply()
+            }
+        }
     }
 
     private fun scheduleExactMillis(ctx: Context, am: AlarmManager, millis: Long,
