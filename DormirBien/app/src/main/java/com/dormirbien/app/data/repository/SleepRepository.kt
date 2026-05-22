@@ -14,6 +14,7 @@ data class SleepRecord(
     val stars:     Int    = 0,
     val feeling:   String = "",
     val createdAt: Long   = System.currentTimeMillis(),
+    val usuarioId: Long?  = null,
 )
 
 interface SleepRepository {
@@ -40,6 +41,9 @@ class OfflineFirstSleepRepository @Inject constructor(
     override suspend fun upsert(record: SleepRecord) =
         dao.upsert(record.toEntity())
 
-    private fun SleepRecordEntity.toDomain() = SleepRecord(id, dateKey, hours, stars, feeling, createdAt)
-    private fun SleepRecord.toEntity()       = SleepRecordEntity(id, dateKey, hours, stars, feeling, createdAt)
+    private fun SleepRecordEntity.toDomain() =
+        SleepRecord(id, dateKey, hours, stars, feeling, createdAt, usuario_id)
+
+    private fun SleepRecord.toEntity() =
+        SleepRecordEntity(id, dateKey, hours, stars, feeling, createdAt, usuarioId)
 }

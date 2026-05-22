@@ -16,14 +16,19 @@ import androidx.activity.result.contract.ActivityResultContracts.*
 import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.dormirbien.app.alarm.AlarmScheduler
 import com.dormirbien.app.alarm.AlarmService
 import com.dormirbien.app.data.local.AlarmPreferences
+import com.dormirbien.app.data.repository.Ajustes
+import com.dormirbien.app.data.repository.AjustesRepository
 import com.dormirbien.app.data.repository.SleepRecord
 import com.dormirbien.app.data.repository.SleepRepository
 import com.dormirbien.app.ui.AppRoot
+import com.dormirbien.app.ui.theme.DormirBienTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -32,8 +37,9 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var prefs:     AlarmPreferences
-    @Inject lateinit var sleepRepo: SleepRepository
+    @Inject lateinit var prefs:       AlarmPreferences
+    @Inject lateinit var sleepRepo:   SleepRepository
+    @Inject lateinit var ajustesRepo: AjustesRepository
 
     private val showReview = mutableStateOf(false)
     private var soundPickedCallback: ((Uri) -> Unit)? = null
@@ -48,7 +54,12 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
         if (uri != null) {
-            lifecycleScope.launch { prefs.saveSoundUri(uri.toString()) }
+            val uriStr = uri.toString()
+            lifecycleScope.launch {
+                prefs.saveSoundUri(uriStr)
+                val cur = ajustesRepo.get() ?: Ajustes()
+                ajustesRepo.upsert(cur.copy(sonidoAlarma = uriStr))
+            }
             soundPickedCallback?.invoke(uri)
             Toast.makeText(this, "Sonido actualizado", Toast.LENGTH_SHORT).show()
         }
@@ -58,16 +69,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ensureChannel()
         setContent {
+            val darkModeFlow = remember { ajustesRepo.observe().map { it?.modoOscuroActivado ?: true } }
+            val isDark by darkModeFlow.collectAsStateWithLifecycle(initialValue = true)
             val review by showReview
-            AppRoot(
-                showReview        = review,
-                onReviewDismiss   = { showReview.value = false },
-                onReviewSave      = { stars, feeling -> saveReview(stars, feeling) },
-                onScheduleAlarms  = { h1, m1, cycles, ht -> scheduleAlarms(h1, m1, cycles, ht) },
-                onCancelAlarms    = { cancelAlarms() },
-                onCancelBackup    = { cancelBackup() },
-                onOpenSoundPicker = { cb -> soundPickedCallback = cb; openSoundPicker() },
-            )
+
+            DormirBienTheme(darkTheme = isDark) {
+                AppRoot(
+                    showReview        = review,
+                    onReviewDismiss   = { showReview.value = false },
+                    onReviewSave      = { stars, feeling -> saveReview(stars, feeling) },
+                    onScheduleAlarms  = { h1, m1, cycles, ht -> scheduleAlarms(h1, m1, cycles, ht) },
+                    onCancelAlarms    = { cancelAlarms() },
+                    onCancelBackup    = { cancelBackup() },
+                    onOpenSoundPicker = { cb -> soundPickedCallback = cb; openSoundPicker() },
+                )
+            }
         }
         window.decorView.post { askPermissions() }
     }
@@ -91,8 +107,6 @@ class MainActivity : ComponentActivity() {
             prefs.saveAlarm(h1, m1, h2, m2, cycles, hoursText)
             val key   = todayKey()
             val hours = cycles * 90f / 60f
-            // Reuse the latest unreviewed session for the day (handles cancel-reschedule).
-            // If already reviewed, create a new session (genuine second sleep/nap).
             val unreviewed = sleepRepo.getLatestUnreviewedByKey(key)
             if (unreviewed != null) {
                 sleepRepo.upsert(unreviewed.copy(hours = hours))
@@ -100,10 +114,12 @@ class MainActivity : ComponentActivity() {
                 sleepRepo.upsert(SleepRecord(dateKey = key, hours = hours))
             }
         }
-        Toast.makeText(this,
+        Toast.makeText(
+            this,
             "✅ Alarmas: ${AlarmScheduler.pad(h1)}:${AlarmScheduler.pad(m1)}" +
             " y ${AlarmScheduler.pad(h2)}:${AlarmScheduler.pad(m2)}",
-            Toast.LENGTH_LONG).show()
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     private fun cancelAlarms() {
@@ -130,7 +146,7 @@ class MainActivity : ComponentActivity() {
         soundLauncher.launch(Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE,
                 RingtoneManager.TYPE_ALARM or RingtoneManager.TYPE_RINGTONE)
-            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Sonido de alarma")
+            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE,        "Sonido de alarma")
             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT,  false)
             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
         })
@@ -141,7 +157,6 @@ class MainActivity : ComponentActivity() {
     private fun askPermissions() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-        // 1. POST_NOTIFICATIONS (Android 13+)
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED) {
@@ -153,7 +168,6 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 2. SCHEDULE_EXACT_ALARM (Android 12+)
         if (Build.VERSION.SDK_INT >= 31) {
             val am = getSystemService(ALARM_SERVICE) as AlarmManager
             if (!am.canScheduleExactAlarms()) {
@@ -166,9 +180,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 3. SYSTEM_ALERT_WINDOW
-        //    Needed so AlarmActivity can appear over the lock screen.
-        //    On Xiaomi/MIUI this is the primary mechanism.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             dialog("Mostrar sobre otras apps",
                 "Para que la interfaz de alarma aparezca sobre la pantalla de " +
@@ -180,7 +191,6 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 4. DND bypass
         if (Build.VERSION.SDK_INT >= 23 && !nm.isNotificationPolicyAccessGranted) {
             dialog("Modo No Molestar",
                 "Para que la alarma suene aunque el móvil esté en silencio " +
@@ -191,7 +201,6 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 5. Xiaomi-specific one-time guide
         val sp = getSharedPreferences("db_sync", MODE_PRIVATE)
         if (!sp.getBoolean("miui_guide_shown", false)) {
             sp.edit().putBoolean("miui_guide_shown", true).apply()
@@ -229,7 +238,7 @@ class MainActivity : ComponentActivity() {
             NotificationManager.IMPORTANCE_HIGH).apply {
             setBypassDnd(true)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            setSound(null, null)  // MediaPlayer handles audio; no channel sound interference
+            setSound(null, null)
             enableVibration(true)
             enableLights(true)
             lightColor = android.graphics.Color.parseColor("#7aaeff")
